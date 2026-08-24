@@ -11,4 +11,5 @@
     <string name="show_non_fcm_apps">Show apps without detected FCM</string>
     <string name="fcm_detected">FCM detected</string>
     <string name="fcm_not_detected">FCM not detected · manual override</string>
+    <string name="installed_apps_permission_denied">Installed-apps access was denied. HyperOS may only expose a partial app list.</string>
 </resources>
