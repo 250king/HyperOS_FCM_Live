@@ -2,6 +2,7 @@
 <resources>
     <string name="appbar_title">FCMLive</string>
     <string name="clear_selection">Clear selection</string>
+    <string name="keep_notifications_when_stopped">Keep notifications when apps stop</string>
     <string name="reconnect_fcm">Reconnect FCM</string>
     <string name="fcm_reconnect_requested">FCM reconnect requested.</string>
     <string name="fcm_reconnect_failed">Unable to request an FCM reconnect.</string>
