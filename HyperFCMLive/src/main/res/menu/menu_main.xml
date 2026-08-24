@@ -25,6 +25,11 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_reconnect_fcm"
+        android:title="@string/reconnect_fcm"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_fcm_diagnostics"
         android:title="@string/open_fcm_diagnostics"
         app:showAsAction="never" />
