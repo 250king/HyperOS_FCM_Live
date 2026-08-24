@@ -2,6 +2,9 @@
 <resources>
     <string name="appbar_title">FCMLive</string>
     <string name="clear_selection">Clear selection</string>
+    <string name="reconnect_fcm">Reconnect FCM</string>
+    <string name="fcm_reconnect_requested">FCM reconnect requested.</string>
+    <string name="fcm_reconnect_failed">Unable to request an FCM reconnect.</string>
     <string name="open_fcm_diagnostics">Open FCM Diagnostics</string>
     <string name="fcm_diagnostics_unavailable">FCM Diagnostics is unavailable in this Google Play services build.</string>
 </resources>
