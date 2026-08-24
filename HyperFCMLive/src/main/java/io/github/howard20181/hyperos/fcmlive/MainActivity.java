@@ -42,6 +42,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String GMS_PACKAGE = "com.google.android.gms";
     private static final String GMS_DIAGNOSTICS_ACTIVITY = "com.google.android.gms.gcm.GcmDiagnostics";
+    private static final String GCM_RECONNECT_ACTION = "com.google.android.intent.action.GCM_RECONNECT";
 
     // MIUI 13 / HyperOS adds this runtime gate on top of QUERY_ALL_PACKAGES.
     // It only exists on ROMs whose permission owner is com.lbe.security.miui.
@@ -124,11 +125,37 @@ public class MainActivity extends AppCompatActivity {
             clearAll();
             return true;
         }
+        if (id == R.id.action_reconnect_fcm) {
+            requestFcmReconnect();
+            return true;
+        }
         if (id == R.id.action_fcm_diagnostics) {
             openFcmDiagnostics();
             return true;
         }
         return false;
+    }
+
+    /**
+     * Ask Google Play services' GCM/MCS transport to reconnect. This mirrors the
+     * package-scoped reconnect broadcast used by GmsCore's own reconnect alarm.
+     */
+    private void requestFcmReconnect() {
+        Intent intent = new Intent(GCM_RECONNECT_ACTION).setPackage(GMS_PACKAGE);
+        try {
+            sendBroadcast(intent);
+            Snackbar.make(
+                    findViewById(android.R.id.content),
+                    R.string.fcm_reconnect_requested,
+                    Snackbar.LENGTH_SHORT)
+                    .show();
+        } catch (Throwable ignored) {
+            Snackbar.make(
+                    findViewById(android.R.id.content),
+                    R.string.fcm_reconnect_failed,
+                    Snackbar.LENGTH_LONG)
+                    .show();
+        }
     }
 
     /**
