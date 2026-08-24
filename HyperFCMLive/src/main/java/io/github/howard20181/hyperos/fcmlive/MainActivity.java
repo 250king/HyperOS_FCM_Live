@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PermissionInfo;
+import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -29,14 +30,18 @@ import io.github.libxposed.service.XposedServiceHelper;
 
 /**
  * Settings screen: lets the user pick which apps FCM is allowed to wake /
- * auto-launch. By default only apps with detectable FCM/GCM integration are
- * shown; manually allowlisted apps are always kept visible as a fallback.
+ * auto-launch. By default only apps with detectable FCM/GCM messaging
+ * components are shown; manually allowlisted apps are always kept visible as a
+ * fallback.
  */
 public class MainActivity extends AppCompatActivity {
 
     private static final String FIREBASE_MESSAGING_EVENT = "com.google.firebase.MESSAGING_EVENT";
     private static final String C2DM_RECEIVE_ACTION = "com.google.android.c2dm.intent.RECEIVE";
-    private static final String C2DM_RECEIVE_PERMISSION = "com.google.android.c2dm.permission.RECEIVE";
+    private static final String C2DM_SEND_PERMISSION = "com.google.android.c2dm.permission.SEND";
+
+    private static final String GMS_PACKAGE = "com.google.android.gms";
+    private static final String GMS_DIAGNOSTICS_ACTIVITY = "com.google.android.gms.gcm.GcmDiagnostics";
 
     // MIUI 13 / HyperOS adds this runtime gate on top of QUERY_ALL_PACKAGES.
     // It only exists on ROMs whose permission owner is com.lbe.security.miui.
@@ -91,6 +96,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupToolbar() {
         MaterialToolbar toolbar = findViewById(R.id.top_app_bar);
+        toolbar.setTitle(R.string.appbar_title);
         toolbar.getMenu().findItem(R.id.action_show_non_fcm_apps).setChecked(showNonFcmApps);
         toolbar.getMenu().findItem(R.id.action_show_system_apps).setChecked(showSystemApps);
         toolbar.setOnMenuItemClickListener(this::onToolbarMenuItemClick);
@@ -118,7 +124,29 @@ public class MainActivity extends AppCompatActivity {
             clearAll();
             return true;
         }
+        if (id == R.id.action_fcm_diagnostics) {
+            openFcmDiagnostics();
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * GcmDiagnostics is an internal Google Play services activity rather than a
+     * public SDK contract, so opening it is intentionally best-effort.
+     */
+    private void openFcmDiagnostics() {
+        Intent intent = new Intent();
+        intent.setClassName(GMS_PACKAGE, GMS_DIAGNOSTICS_ACTIVITY);
+        try {
+            startActivity(intent);
+        } catch (Throwable ignored) {
+            Snackbar.make(
+                    findViewById(android.R.id.content),
+                    R.string.fcm_diagnostics_unavailable,
+                    Snackbar.LENGTH_LONG)
+                    .show();
+        }
     }
 
     private void setupSearch() {
@@ -217,7 +245,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Select only apps for which FCM/GCM integration was actually detected. */
+    /** Select only apps for which an FCM/GCM message entry component was detected. */
     private void selectDetectedFcmApps() {
         for (AppListAdapter.AppEntry app : allApps) {
             if (app.fcmDetected) {
@@ -258,25 +286,17 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean isSystemApp(ApplicationInfo ai) {
         return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
-                && (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+                || (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
     }
 
     /**
-     * Detect common Firebase/GCM integration signals. This intentionally uses
-     * several signals because there is no public PackageManager API that says
-     * "this app uses FCM" with perfect accuracy.
+     * Detect the message-entry components registered by Firebase Messaging and
+     * legacy GCM clients. A bare c2dm RECEIVE permission is deliberately not a
+     * positive signal: the current Firebase SDK still declares that permission
+     * for compatibility with older Google Play services IID token creation.
      */
     private boolean hasFcmCapability(PackageManager pm, PackageInfo pi) {
         String packageName = pi.packageName;
-
-        if (pi.requestedPermissions != null) {
-            for (String permission : pi.requestedPermissions) {
-                if (C2DM_RECEIVE_PERMISSION.equals(permission)) {
-                    return true;
-                }
-            }
-        }
-
         int matchFlags = PackageManager.MATCH_DISABLED_COMPONENTS;
 
         try {
@@ -289,8 +309,11 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             Intent c2dmReceive = new Intent(C2DM_RECEIVE_ACTION).setPackage(packageName);
-            if (!pm.queryBroadcastReceivers(c2dmReceive, matchFlags).isEmpty()) {
-                return true;
+            for (ResolveInfo receiver : pm.queryBroadcastReceivers(c2dmReceive, matchFlags)) {
+                if (receiver.activityInfo != null
+                        && C2DM_SEND_PERMISSION.equals(receiver.activityInfo.permission)) {
+                    return true;
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -377,9 +400,9 @@ public class MainActivity extends AppCompatActivity {
                 boolean fcmDetected = hasFcmCapability(pm, pi);
                 boolean manuallyAllowed = allowSnapshot.contains(ai.packageName);
 
-                // Default view: only detected FCM clients. Keep manual overrides
-                // visible even when detection misses them, so users never lose a
-                // previously configured entry.
+                // Default view: only detected FCM/GCM clients. Keep manual
+                // overrides visible even when detection misses them, so users
+                // never lose a previously configured entry.
                 if (!showNonFcm && !fcmDetected && !manuallyAllowed) {
                     continue;
                 }
