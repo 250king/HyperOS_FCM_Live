@@ -25,6 +25,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_keep_notifications"
+        android:checkable="true"
+        android:title="@string/keep_notifications_when_stopped"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_reconnect_fcm"
         android:title="@string/reconnect_fcm"
         app:showAsAction="never" />
