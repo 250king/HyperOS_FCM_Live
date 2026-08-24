@@ -1,17 +1,19 @@
 package io.github.howard20181.hyperos.fcmlive;
 
-import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.text.TextUtils;
-import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.ListView;
-import android.widget.SearchView;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SearchView;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.checkbox.MaterialCheckBox;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -23,24 +25,28 @@ import io.github.libxposed.service.XposedServiceHelper;
 
 /**
  * Settings screen: lets the user pick which apps FCM is allowed to wake /
- * auto-launch (manual whitelist). Apps not checked are never woken.
+ * auto-launch. By default only apps with detectable FCM/GCM integration are
+ * shown; manually allowlisted apps are always kept visible as a fallback.
  */
-public class MainActivity extends Activity implements SearchView.OnQueryTextListener {
+public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
+
+    private static final String FIREBASE_MESSAGING_EVENT = "com.google.firebase.MESSAGING_EVENT";
+    private static final String C2DM_RECEIVE_ACTION = "com.google.android.c2dm.intent.RECEIVE";
+    private static final String C2DM_RECEIVE_PERMISSION = "com.google.android.c2dm.permission.RECEIVE";
 
     private final List<AppListAdapter.AppEntry> allApps = new ArrayList<>();
     private final List<AppListAdapter.AppEntry> filteredApps = new ArrayList<>();
     private Set<String> allowlist = new HashSet<>();
     private AppListAdapter adapter;
     private SearchView searchView;
-    // Don't show system apps by default; toggle to include them.
     private boolean showSystemApps = false;
+    private boolean showNonFcmApps = false;
     private XposedService xposedService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        setTitle(R.string.settings_title);
 
         initXposedService();
 
@@ -51,7 +57,6 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
                 allowlist.remove(pkg);
             }
             updateAllowlist();
-            // Re-sort so the just-toggled app moves to/from the top.
             for (AppListAdapter.AppEntry app : allApps) {
                 if (app.packageName.equals(pkg)) {
                     app.checked = checked;
@@ -61,23 +66,29 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
             sortApps();
             filterApps(searchView.getQuery().toString());
         });
-        ((ListView) findViewById(R.id.app_list)).setAdapter(adapter);
+        ((android.widget.ListView) findViewById(R.id.app_list)).setAdapter(adapter);
 
         searchView = findViewById(R.id.search_view);
         searchView.setOnQueryTextListener(this);
 
-        CheckBox cbSystemApps = findViewById(R.id.cb_system_apps);
+        MaterialCheckBox cbSystemApps = findViewById(R.id.cb_system_apps);
         cbSystemApps.setChecked(showSystemApps);
         cbSystemApps.setOnCheckedChangeListener((buttonView, isChecked) -> {
             showSystemApps = isChecked;
-            // loadApps runs off the main thread and refreshes the list on completion.
             loadApps();
         });
 
-        Button selectAll = findViewById(R.id.btn_select_all);
-        Button clearAll = findViewById(R.id.btn_clear_all);
-        selectAll.setOnClickListener(v -> setAllChecked(true));
-        clearAll.setOnClickListener(v -> setAllChecked(false));
+        MaterialCheckBox cbNonFcmApps = findViewById(R.id.cb_non_fcm_apps);
+        cbNonFcmApps.setChecked(showNonFcmApps);
+        cbNonFcmApps.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            showNonFcmApps = isChecked;
+            loadApps();
+        });
+
+        MaterialButton selectDetected = findViewById(R.id.btn_select_all);
+        MaterialButton clearAll = findViewById(R.id.btn_clear_all);
+        selectDetected.setOnClickListener(v -> selectDetectedFcmApps());
+        clearAll.setOnClickListener(v -> clearAll());
 
         loadApps();
     }
@@ -109,53 +120,87 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
         adapter.notifyDataSetChanged();
     }
 
-    private void setAllChecked(boolean checked) {
-        allowlist = new HashSet<>();
-        // Apply to all apps, not just filtered ones
+    /** Select only apps for which FCM/GCM integration was actually detected. */
+    private void selectDetectedFcmApps() {
         for (AppListAdapter.AppEntry app : allApps) {
-            app.checked = checked;
-            if (checked) {
+            if (app.fcmDetected) {
+                app.checked = true;
                 allowlist.add(app.packageName);
             }
         }
         updateAllowlist();
-        if (adapter != null) {
-            adapter.notifyDataSetChanged();
-        }
+        sortApps();
+        filterApps(searchView != null ? searchView.getQuery().toString() : "");
     }
 
-    private void toggleSystemApps() {
-        showSystemApps = !showSystemApps;
-        loadApps();
-        filterApps(searchView != null ? searchView.getQuery().toString() : "");
-        if (adapter != null) {
-            adapter.notifyDataSetChanged();
+    private void clearAll() {
+        allowlist.clear();
+        for (AppListAdapter.AppEntry app : allApps) {
+            app.checked = false;
         }
+        updateAllowlist();
+        sortApps();
+        filterApps(searchView != null ? searchView.getQuery().toString() : "");
     }
 
     private void sortApps() {
         allApps.sort(MainActivity::compareEntries);
     }
 
-    /** Checked (allowlisted) apps first, then alphabetically by label. */
+    /** Checked apps first, then detected FCM apps, then alphabetically. */
     private static int compareEntries(AppListAdapter.AppEntry a, AppListAdapter.AppEntry b) {
         if (a.checked != b.checked) {
             return a.checked ? -1 : 1;
+        }
+        if (a.fcmDetected != b.fcmDetected) {
+            return a.fcmDetected ? -1 : 1;
         }
         int c = a.label.compareToIgnoreCase(b.label);
         return c != 0 ? c : a.packageName.compareTo(b.packageName);
     }
 
     private boolean isSystemApp(ApplicationInfo ai) {
-        // System app: either installed in /system or updated system app
         return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                 && (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
     }
 
     /**
-     * Bind to the libxposed XposedService so we can read/write the cross-process
-     * remote preferences that the system_server hooks read from.
+     * Detect common Firebase/GCM integration signals. This intentionally uses
+     * several signals because there is no public PackageManager API that says
+     * "this app uses FCM" with perfect accuracy.
      */
+    private boolean hasFcmCapability(PackageManager pm, PackageInfo pi) {
+        String packageName = pi.packageName;
+
+        if (pi.requestedPermissions != null) {
+            for (String permission : pi.requestedPermissions) {
+                if (C2DM_RECEIVE_PERMISSION.equals(permission)) {
+                    return true;
+                }
+            }
+        }
+
+        int matchFlags = PackageManager.MATCH_DISABLED_COMPONENTS;
+
+        try {
+            Intent firebaseMessaging = new Intent(FIREBASE_MESSAGING_EVENT).setPackage(packageName);
+            if (!pm.queryIntentServices(firebaseMessaging, matchFlags).isEmpty()) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Intent c2dmReceive = new Intent(C2DM_RECEIVE_ACTION).setPackage(packageName);
+            if (!pm.queryBroadcastReceivers(c2dmReceive, matchFlags).isEmpty()) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return false;
+    }
+
     private void initXposedService() {
         try {
             XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
@@ -177,8 +222,7 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
                     }
                 }
             });
-        } catch (Throwable e) {
-            // Xposed service unavailable; the UI just won't be able to persist.
+        } catch (Throwable ignored) {
         }
     }
 
@@ -206,7 +250,6 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
         filterApps(searchView != null ? searchView.getQuery().toString() : "");
     }
 
-    /** Persist the allowlist to remote prefs and tell system_server to refresh. */
     private void updateAllowlist() {
         SharedPreferences prefs = remotePrefs();
         if (prefs == null) {
@@ -216,60 +259,42 @@ public class MainActivity extends Activity implements SearchView.OnQueryTextList
     }
 
     private void loadApps() {
-        // Query the package manager and load labels off the main thread so the
-        // first open of the screen stays responsive. Icons are loaded lazily by
-        // the adapter, so only the lightweight query/label work happens here.
         final boolean showSys = showSystemApps;
-        final Set<String> allow = new HashSet<>(allowlist);
+        final boolean showNonFcm = showNonFcmApps;
+        final Set<String> allowSnapshot = new HashSet<>(allowlist);
+
         new Thread(() -> {
             PackageManager pm = getPackageManager();
+            List<PackageInfo> installed = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS);
+            List<AppListAdapter.AppEntry> result = new ArrayList<>();
 
-            // Phase 1: show the allowlisted apps immediately, resolved from the
-            // allowlist package names, so the user sees their selection without
-            // waiting for the full package query to finish.
-            java.util.List<AppListAdapter.AppEntry> selected = new ArrayList<>();
-            for (String pkg : allow) {
-                ApplicationInfo ai;
-                try {
-                    ai = pm.getApplicationInfo(pkg, 0);
-                } catch (PackageManager.NameNotFoundException e) {
-                    continue; // allowlisted app no longer installed
-                }
-                AppListAdapter.AppEntry entry =
-                        new AppListAdapter.AppEntry(pkg, ai.loadLabel(pm).toString());
-                entry.checked = true;
-                selected.add(entry);
-            }
-            selected.sort(MainActivity::compareEntries);
-            if (!selected.isEmpty()) {
-                runOnUiThread(() -> {
-                    allApps.clear();
-                    allApps.addAll(selected);
-                    filterApps(searchView != null ? searchView.getQuery().toString() : "");
-                    adapter.notifyDataSetChanged();
-                });
-            }
-
-            // Phase 2: full query, replacing with the complete sorted list.
-            java.util.List<android.content.pm.PackageInfo> installed =
-                    pm.getInstalledPackages(0);
-            java.util.List<AppListAdapter.AppEntry> result = new ArrayList<>();
-            for (android.content.pm.PackageInfo pi : installed) {
+            for (PackageInfo pi : installed) {
                 ApplicationInfo ai = pi.applicationInfo;
-                // Skip the module's own package (it's never FCM-targeted by GMS).
-                if (ai.packageName.equals(getPackageName())) {
+                if (ai == null || ai.packageName.equals(getPackageName())) {
                     continue;
                 }
-                // By default, only show user apps. Toggle to show system apps.
                 if (!showSys && isSystemApp(ai)) {
                     continue;
                 }
-                result.add(new AppListAdapter.AppEntry(
-                        ai.packageName, ai.loadLabel(pm).toString()));
+
+                boolean fcmDetected = hasFcmCapability(pm, pi);
+                boolean manuallyAllowed = allowSnapshot.contains(ai.packageName);
+
+                // Default view: only detected FCM clients. Keep manual overrides
+                // visible even when detection misses them, so users never lose a
+                // previously configured entry.
+                if (!showNonFcm && !fcmDetected && !manuallyAllowed) {
+                    continue;
+                }
+
+                AppListAdapter.AppEntry entry = new AppListAdapter.AppEntry(
+                        ai.packageName,
+                        ai.loadLabel(pm).toString(),
+                        fcmDetected);
+                entry.checked = manuallyAllowed;
+                result.add(entry);
             }
-            for (AppListAdapter.AppEntry app : result) {
-                app.checked = allowlist.contains(app.packageName);
-            }
+
             result.sort(MainActivity::compareEntries);
             runOnUiThread(() -> {
                 allApps.clear();
