@@ -24,4 +24,9 @@
         android:title="@string/clear_selection"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_fcm_diagnostics"
+        android:title="@string/open_fcm_diagnostics"
+        app:showAsAction="never" />
+
 </menu>
