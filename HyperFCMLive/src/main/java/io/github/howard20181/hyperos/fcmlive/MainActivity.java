@@ -56,8 +56,10 @@ public class MainActivity extends AppCompatActivity {
     private Set<String> allowlist = new HashSet<>();
     private AppListAdapter adapter;
     private TextInputEditText searchInput;
+    private MaterialToolbar toolbar;
     private boolean showSystemApps = false;
     private boolean showNonFcmApps = false;
+    private boolean keepNotifications = false;
     private XposedService xposedService;
 
     @Override
@@ -96,10 +98,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupToolbar() {
-        MaterialToolbar toolbar = findViewById(R.id.top_app_bar);
+        toolbar = findViewById(R.id.top_app_bar);
         toolbar.setTitle(R.string.appbar_title);
         toolbar.getMenu().findItem(R.id.action_show_non_fcm_apps).setChecked(showNonFcmApps);
         toolbar.getMenu().findItem(R.id.action_show_system_apps).setChecked(showSystemApps);
+        toolbar.getMenu().findItem(R.id.action_keep_notifications).setChecked(keepNotifications);
         toolbar.setOnMenuItemClickListener(this::onToolbarMenuItemClick);
     }
 
@@ -123,6 +126,12 @@ public class MainActivity extends AppCompatActivity {
         }
         if (id == R.id.action_clear_selection) {
             clearAll();
+            return true;
+        }
+        if (id == R.id.action_keep_notifications) {
+            keepNotifications = !keepNotifications;
+            item.setChecked(keepNotifications);
+            updateKeepNotifications();
             return true;
         }
         if (id == R.id.action_reconnect_fcm) {
@@ -390,8 +399,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         allowlist = Prefs.readAllowlist(prefs);
+        keepNotifications = Prefs.readKeepNotifications(prefs);
         for (AppListAdapter.AppEntry app : allApps) {
             app.checked = allowlist.contains(app.packageName);
+        }
+        if (toolbar != null) {
+            MenuItem keepItem = toolbar.getMenu().findItem(R.id.action_keep_notifications);
+            if (keepItem != null) {
+                keepItem.setChecked(keepNotifications);
+            }
         }
         sortApps();
         filterApps(currentSearchQuery());
@@ -403,6 +419,14 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         Prefs.writeAllowlist(this, prefs, allowlist);
+    }
+
+    private void updateKeepNotifications() {
+        SharedPreferences prefs = remotePrefs();
+        if (prefs == null) {
+            return;
+        }
+        Prefs.writeKeepNotifications(this, prefs, keepNotifications);
     }
 
     private void loadApps() {
