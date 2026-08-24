@@ -38,16 +38,26 @@ public final class Prefs {
         return remotePrefs.getBoolean(KEY_KEEP_NOTIFICATIONS, false);
     }
 
-    public static void writeAllowlist(Context context, SharedPreferences remotePrefs,
-                                      Set<String> allowlist) {
-        remotePrefs.edit().putStringSet(KEY_ALLOWLIST, new HashSet<>(allowlist)).commit();
-        notifyConfigChanged(context);
+    public static boolean writeAllowlist(Context context, SharedPreferences remotePrefs,
+                                         Set<String> allowlist) {
+        boolean saved = remotePrefs.edit()
+                .putStringSet(KEY_ALLOWLIST, new HashSet<>(allowlist))
+                .commit();
+        if (saved) {
+            notifyConfigChanged(context);
+        }
+        return saved;
     }
 
-    public static void writeKeepNotifications(Context context, SharedPreferences remotePrefs,
-                                              boolean enabled) {
-        remotePrefs.edit().putBoolean(KEY_KEEP_NOTIFICATIONS, enabled).commit();
-        notifyConfigChanged(context);
+    public static boolean writeKeepNotifications(Context context, SharedPreferences remotePrefs,
+                                                 boolean enabled) {
+        boolean saved = remotePrefs.edit()
+                .putBoolean(KEY_KEEP_NOTIFICATIONS, enabled)
+                .commit();
+        if (saved) {
+            notifyConfigChanged(context);
+        }
+        return saved;
     }
 
     private static void notifyConfigChanged(Context context) {
