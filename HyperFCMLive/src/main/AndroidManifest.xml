@@ -12,6 +12,7 @@
         android:description="@string/xposed_description"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:theme="@style/Theme.HyperFCMLive"
         tools:ignore="AllowBackup,MissingApplicationIcon">
 
         <activity
