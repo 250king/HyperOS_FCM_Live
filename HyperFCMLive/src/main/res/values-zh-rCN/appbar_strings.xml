@@ -2,6 +2,9 @@
 <resources>
     <string name="appbar_title">FCMLive</string>
     <string name="clear_selection">清空选择</string>
+    <string name="reconnect_fcm">重新连接 FCM</string>
+    <string name="fcm_reconnect_requested">已请求 FCM 重新连接。</string>
+    <string name="fcm_reconnect_failed">无法请求 FCM 重新连接。</string>
     <string name="open_fcm_diagnostics">打开 FCM Diagnostics</string>
     <string name="fcm_diagnostics_unavailable">当前 Google Play 服务版本无法打开 FCM Diagnostics。</string>
 </resources>
