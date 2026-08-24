@@ -2,4 +2,6 @@
 <resources>
     <string name="appbar_title">FCMLive</string>
     <string name="clear_selection">清空选择</string>
+    <string name="open_fcm_diagnostics">打开 FCM Diagnostics</string>
+    <string name="fcm_diagnostics_unavailable">当前 Google Play 服务版本无法打开 FCM Diagnostics。</string>
 </resources>
