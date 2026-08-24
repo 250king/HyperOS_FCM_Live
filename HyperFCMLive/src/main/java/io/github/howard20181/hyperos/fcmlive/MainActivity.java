@@ -21,6 +21,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -43,6 +44,15 @@ public class MainActivity extends AppCompatActivity {
     private static final String GMS_PACKAGE = "com.google.android.gms";
     private static final String GMS_DIAGNOSTICS_ACTIVITY = "com.google.android.gms.gcm.GcmDiagnostics";
     private static final String GCM_RECONNECT_ACTION = "com.google.android.intent.action.GCM_RECONNECT";
+
+    // Local write-through staging prevents UI changes made before XposedService
+    // binding from being silently lost. Remote prefs remain authoritative once
+    // connected unless a local value is explicitly marked dirty.
+    private static final String STAGING_PREFS = "ui_config_staging";
+    private static final String STAGING_ALLOWLIST = "allowlist";
+    private static final String STAGING_ALLOWLIST_DIRTY = "allowlist_dirty";
+    private static final String STAGING_KEEP_NOTIFICATIONS = "keep_notifications";
+    private static final String STAGING_KEEP_NOTIFICATIONS_DIRTY = "keep_notifications_dirty";
 
     // MIUI 13 / HyperOS adds this runtime gate on top of QUERY_ALL_PACKAGES.
     // It only exists on ROMs whose permission owner is com.lbe.security.miui.
@@ -67,6 +77,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        restoreStagedConfig();
         initXposedService();
 
         adapter = new AppListAdapter(this, filteredApps, (pkg, checked) -> {
@@ -364,7 +375,7 @@ public class MainActivity extends AppCompatActivity {
                 public void onServiceBind(@NonNull XposedService service) {
                     xposedService = service;
                     runOnUiThread(() -> {
-                        reloadAllowlist();
+                        synchronizeConfigFromService();
                         if (adapter != null) {
                             adapter.notifyDataSetChanged();
                         }
@@ -393,13 +404,74 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void reloadAllowlist() {
-        SharedPreferences prefs = remotePrefs();
-        if (prefs == null) {
+    private SharedPreferences stagingPrefs() {
+        return getSharedPreferences(STAGING_PREFS, MODE_PRIVATE);
+    }
+
+    /** Restore the last UI-visible config immediately, even before service bind. */
+    private void restoreStagedConfig() {
+        SharedPreferences staging = stagingPrefs();
+        if (staging.contains(STAGING_ALLOWLIST)) {
+            Set<String> staged = staging.getStringSet(
+                    STAGING_ALLOWLIST, Collections.emptySet());
+            allowlist = staged != null ? new HashSet<>(staged) : new HashSet<>();
+        }
+        if (staging.contains(STAGING_KEEP_NOTIFICATIONS)) {
+            keepNotifications = staging.getBoolean(STAGING_KEEP_NOTIFICATIONS, false);
+        }
+    }
+
+    /**
+     * Reconcile local staging with libxposed remote preferences.
+     *
+     * Dirty local values win and are flushed to remote. Clean local values are
+     * just a cache, so remote remains authoritative and refreshes the UI/cache.
+     */
+    private void synchronizeConfigFromService() {
+        SharedPreferences remote = remotePrefs();
+        if (remote == null) {
             return;
         }
-        allowlist = Prefs.readAllowlist(prefs);
-        keepNotifications = Prefs.readKeepNotifications(prefs);
+
+        SharedPreferences staging = stagingPrefs();
+        boolean allowlistDirty = staging.getBoolean(STAGING_ALLOWLIST_DIRTY, false);
+        boolean keepNotificationsDirty = staging.getBoolean(
+                STAGING_KEEP_NOTIFICATIONS_DIRTY, false);
+
+        if (allowlistDirty) {
+            Set<String> staged = staging.getStringSet(
+                    STAGING_ALLOWLIST, Collections.emptySet());
+            allowlist = staged != null ? new HashSet<>(staged) : new HashSet<>();
+            if (Prefs.writeAllowlist(this, remote, allowlist)) {
+                staging.edit().putBoolean(STAGING_ALLOWLIST_DIRTY, false).apply();
+            }
+        } else {
+            allowlist = Prefs.readAllowlist(remote);
+            staging.edit()
+                    .putStringSet(STAGING_ALLOWLIST, new HashSet<>(allowlist))
+                    .putBoolean(STAGING_ALLOWLIST_DIRTY, false)
+                    .apply();
+        }
+
+        if (keepNotificationsDirty) {
+            keepNotifications = staging.getBoolean(STAGING_KEEP_NOTIFICATIONS, false);
+            if (Prefs.writeKeepNotifications(this, remote, keepNotifications)) {
+                staging.edit()
+                        .putBoolean(STAGING_KEEP_NOTIFICATIONS_DIRTY, false)
+                        .apply();
+            }
+        } else {
+            keepNotifications = Prefs.readKeepNotifications(remote);
+            staging.edit()
+                    .putBoolean(STAGING_KEEP_NOTIFICATIONS, keepNotifications)
+                    .putBoolean(STAGING_KEEP_NOTIFICATIONS_DIRTY, false)
+                    .apply();
+        }
+
+        applyConfigToUi();
+    }
+
+    private void applyConfigToUi() {
         for (AppListAdapter.AppEntry app : allApps) {
             app.checked = allowlist.contains(app.packageName);
         }
@@ -414,19 +486,32 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateAllowlist() {
-        SharedPreferences prefs = remotePrefs();
-        if (prefs == null) {
-            return;
+        SharedPreferences staging = stagingPrefs();
+        staging.edit()
+                .putStringSet(STAGING_ALLOWLIST, new HashSet<>(allowlist))
+                .putBoolean(STAGING_ALLOWLIST_DIRTY, true)
+                .apply();
+
+        SharedPreferences remote = remotePrefs();
+        if (remote != null && Prefs.writeAllowlist(this, remote, allowlist)) {
+            staging.edit().putBoolean(STAGING_ALLOWLIST_DIRTY, false).apply();
         }
-        Prefs.writeAllowlist(this, prefs, allowlist);
     }
 
     private void updateKeepNotifications() {
-        SharedPreferences prefs = remotePrefs();
-        if (prefs == null) {
-            return;
+        SharedPreferences staging = stagingPrefs();
+        staging.edit()
+                .putBoolean(STAGING_KEEP_NOTIFICATIONS, keepNotifications)
+                .putBoolean(STAGING_KEEP_NOTIFICATIONS_DIRTY, true)
+                .apply();
+
+        SharedPreferences remote = remotePrefs();
+        if (remote != null
+                && Prefs.writeKeepNotifications(this, remote, keepNotifications)) {
+            staging.edit()
+                    .putBoolean(STAGING_KEEP_NOTIFICATIONS_DIRTY, false)
+                    .apply();
         }
-        Prefs.writeKeepNotifications(this, prefs, keepNotifications);
     }
 
     private void loadApps() {
