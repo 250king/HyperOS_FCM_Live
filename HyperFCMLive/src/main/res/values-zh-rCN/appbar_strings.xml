@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appbar_title">FCMLive</string>
+    <string name="clear_selection">清空选择</string>
+</resources>
