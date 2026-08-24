@@ -7,15 +7,17 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PermissionInfo;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.view.MenuItem;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SearchView;
 
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -30,7 +32,7 @@ import io.github.libxposed.service.XposedServiceHelper;
  * auto-launch. By default only apps with detectable FCM/GCM integration are
  * shown; manually allowlisted apps are always kept visible as a fallback.
  */
-public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
+public class MainActivity extends AppCompatActivity {
 
     private static final String FIREBASE_MESSAGING_EVENT = "com.google.firebase.MESSAGING_EVENT";
     private static final String C2DM_RECEIVE_ACTION = "com.google.android.c2dm.intent.RECEIVE";
@@ -47,7 +49,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     private final List<AppListAdapter.AppEntry> filteredApps = new ArrayList<>();
     private Set<String> allowlist = new HashSet<>();
     private AppListAdapter adapter;
-    private SearchView searchView;
+    private TextInputEditText searchInput;
     private boolean showSystemApps = false;
     private boolean showNonFcmApps = false;
     private XposedService xposedService;
@@ -73,37 +75,75 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 }
             }
             sortApps();
-            filterApps(searchView.getQuery().toString());
+            filterApps(currentSearchQuery());
         });
         ((android.widget.ListView) findViewById(R.id.app_list)).setAdapter(adapter);
 
-        searchView = findViewById(R.id.search_view);
-        searchView.setOnQueryTextListener(this);
-
-        MaterialCheckBox cbSystemApps = findViewById(R.id.cb_system_apps);
-        cbSystemApps.setChecked(showSystemApps);
-        cbSystemApps.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            showSystemApps = isChecked;
-            loadApps();
-        });
-
-        MaterialCheckBox cbNonFcmApps = findViewById(R.id.cb_non_fcm_apps);
-        cbNonFcmApps.setChecked(showNonFcmApps);
-        cbNonFcmApps.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            showNonFcmApps = isChecked;
-            loadApps();
-        });
-
-        MaterialButton selectDetected = findViewById(R.id.btn_select_all);
-        MaterialButton clearAll = findViewById(R.id.btn_clear_all);
-        selectDetected.setOnClickListener(v -> selectDetectedFcmApps());
-        clearAll.setOnClickListener(v -> clearAll());
+        setupToolbar();
+        setupSearch();
 
         // Do not query installed packages until HyperOS has had a chance to grant
         // its extra app-list permission. Non-MIUI ROMs skip this path entirely.
         if (!requestInstalledAppsPermissionIfNeeded()) {
             loadApps();
         }
+    }
+
+    private void setupToolbar() {
+        MaterialToolbar toolbar = findViewById(R.id.top_app_bar);
+        toolbar.getMenu().findItem(R.id.action_show_non_fcm_apps).setChecked(showNonFcmApps);
+        toolbar.getMenu().findItem(R.id.action_show_system_apps).setChecked(showSystemApps);
+        toolbar.setOnMenuItemClickListener(this::onToolbarMenuItemClick);
+    }
+
+    private boolean onToolbarMenuItemClick(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.action_show_non_fcm_apps) {
+            showNonFcmApps = !showNonFcmApps;
+            item.setChecked(showNonFcmApps);
+            loadApps();
+            return true;
+        }
+        if (id == R.id.action_show_system_apps) {
+            showSystemApps = !showSystemApps;
+            item.setChecked(showSystemApps);
+            loadApps();
+            return true;
+        }
+        if (id == R.id.action_select_detected) {
+            selectDetectedFcmApps();
+            return true;
+        }
+        if (id == R.id.action_clear_selection) {
+            clearAll();
+            return true;
+        }
+        return false;
+    }
+
+    private void setupSearch() {
+        searchInput = findViewById(R.id.search_input);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                filterApps(s != null ? s.toString() : "");
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+    }
+
+    private String currentSearchQuery() {
+        if (searchInput == null || searchInput.getText() == null) {
+            return "";
+        }
+        return searchInput.getText().toString();
     }
 
     /**
@@ -159,17 +199,6 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         loadApps();
     }
 
-    @Override
-    public boolean onQueryTextSubmit(String query) {
-        return false;
-    }
-
-    @Override
-    public boolean onQueryTextChange(String newText) {
-        filterApps(newText);
-        return true;
-    }
-
     private void filterApps(String query) {
         filteredApps.clear();
         if (TextUtils.isEmpty(query)) {
@@ -183,7 +212,9 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 }
             }
         }
-        adapter.notifyDataSetChanged();
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
     }
 
     /** Select only apps for which FCM/GCM integration was actually detected. */
@@ -196,7 +227,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         }
         updateAllowlist();
         sortApps();
-        filterApps(searchView != null ? searchView.getQuery().toString() : "");
+        filterApps(currentSearchQuery());
     }
 
     private void clearAll() {
@@ -206,7 +237,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         }
         updateAllowlist();
         sortApps();
-        filterApps(searchView != null ? searchView.getQuery().toString() : "");
+        filterApps(currentSearchQuery());
     }
 
     private void sortApps() {
@@ -313,7 +344,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             app.checked = allowlist.contains(app.packageName);
         }
         sortApps();
-        filterApps(searchView != null ? searchView.getQuery().toString() : "");
+        filterApps(currentSearchQuery());
     }
 
     private void updateAllowlist() {
@@ -365,7 +396,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             runOnUiThread(() -> {
                 allApps.clear();
                 allApps.addAll(result);
-                filterApps(searchView != null ? searchView.getQuery().toString() : "");
+                filterApps(currentSearchQuery());
                 adapter.notifyDataSetChanged();
             });
         }).start();
