@@ -12,4 +12,5 @@
     <string name="show_non_fcm_apps">显示未检测到 FCM 的应用</string>
     <string name="fcm_detected">已检测到 FCM</string>
     <string name="fcm_not_detected">未检测到 FCM · 可手动添加</string>
+    <string name="installed_apps_permission_denied">未授予“获取应用列表”权限，澎湃 OS 可能只返回部分应用。</string>
 </resources>
