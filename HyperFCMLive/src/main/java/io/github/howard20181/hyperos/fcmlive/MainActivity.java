@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PermissionInfo;
 import android.os.Bundle;
 import android.text.TextUtils;
 
@@ -14,6 +15,7 @@ import androidx.appcompat.widget.SearchView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.snackbar.Snackbar;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -33,6 +35,13 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     private static final String FIREBASE_MESSAGING_EVENT = "com.google.firebase.MESSAGING_EVENT";
     private static final String C2DM_RECEIVE_ACTION = "com.google.android.c2dm.intent.RECEIVE";
     private static final String C2DM_RECEIVE_PERMISSION = "com.google.android.c2dm.permission.RECEIVE";
+
+    // MIUI 13 / HyperOS adds this runtime gate on top of QUERY_ALL_PACKAGES.
+    // It only exists on ROMs whose permission owner is com.lbe.security.miui.
+    private static final String GET_INSTALLED_APPS_PERMISSION =
+            "com.android.permission.GET_INSTALLED_APPS";
+    private static final String MIUI_SECURITY_PACKAGE = "com.lbe.security.miui";
+    private static final int REQUEST_GET_INSTALLED_APPS = 1001;
 
     private final List<AppListAdapter.AppEntry> allApps = new ArrayList<>();
     private final List<AppListAdapter.AppEntry> filteredApps = new ArrayList<>();
@@ -90,6 +99,63 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         selectDetected.setOnClickListener(v -> selectDetectedFcmApps());
         clearAll.setOnClickListener(v -> clearAll());
 
+        // Do not query installed packages until HyperOS has had a chance to grant
+        // its extra app-list permission. Non-MIUI ROMs skip this path entirely.
+        if (!requestInstalledAppsPermissionIfNeeded()) {
+            loadApps();
+        }
+    }
+
+    /**
+     * Returns true when a runtime permission request was launched and loading
+     * should wait for onRequestPermissionsResult().
+     */
+    private boolean requestInstalledAppsPermissionIfNeeded() {
+        PackageManager pm = getPackageManager();
+        try {
+            PermissionInfo permissionInfo = pm.getPermissionInfo(GET_INSTALLED_APPS_PERMISSION, 0);
+            if (permissionInfo == null
+                    || !MIUI_SECURITY_PACKAGE.equals(permissionInfo.packageName)) {
+                return false;
+            }
+        } catch (PackageManager.NameNotFoundException ignored) {
+            // AOSP and other ROMs do not expose Xiaomi's extra permission.
+            return false;
+        }
+
+        if (checkSelfPermission(GET_INSTALLED_APPS_PERMISSION)
+                == PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+
+        requestPermissions(
+                new String[]{GET_INSTALLED_APPS_PERMISSION},
+                REQUEST_GET_INSTALLED_APPS);
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            @NonNull String[] permissions,
+            @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != REQUEST_GET_INSTALLED_APPS) {
+            return;
+        }
+
+        boolean granted = grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        if (!granted) {
+            Snackbar.make(
+                    findViewById(android.R.id.content),
+                    R.string.installed_apps_permission_denied,
+                    Snackbar.LENGTH_LONG)
+                    .show();
+        }
+
+        // Even when denied, load what the ROM allows so the screen remains usable.
         loadApps();
     }
 
