@@ -3,9 +3,14 @@
     <string name="app_name">修复澎湃系统谷歌推送重连</string>
     <string name="xposed_description">去除澎湃系统对谷歌推送连接相关广播的限制。启用模块后，系统耗电可能会增加。</string>
     <string name="settings_title">FCM 唤醒白名单</string>
-    <string name="settings_hint">只有下方勾选的应用，才会被 FCM 推送唤醒 / 自动拉起。未勾选的应用不会被唤醒（即使已开启通知）。</string>
+    <string name="settings_hint">默认仅显示检测到 Firebase / GCM 集成的应用。勾选后，FCM 推送到达时可允许其被唤醒 / 自动拉起。检测并非绝对准确，可开启“显示未检测到 FCM 的应用”手动补充。</string>
     <string name="select_all">全选</string>
+    <string name="select_detected">选择检测到的 FCM 应用</string>
     <string name="clear_all">清空</string>
     <string name="search_hint">搜索应用…</string>
     <string name="show_system_apps">显示系统应用</string>
+    <string name="show_non_fcm_apps">显示未检测到 FCM 的应用</string>
+    <string name="fcm_detected">已检测到 FCM</string>
+    <string name="fcm_not_detected">未检测到 FCM · 可手动添加</string>
+    <string name="installed_apps_permission_denied">未授予“获取应用列表”权限，澎湃 OS 可能只返回部分应用。</string>
 </resources>
