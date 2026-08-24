@@ -9,22 +9,20 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * FCM wake allowlist, shared between the module's settings UI (app process) and
- * the Xposed hooks (system_server) via libxposed's cross-process remote
- * preferences ({@code XposedInterface.getRemotePreferences}).
- *
- * system_server cannot read the module's private files (SELinux MLS categories)
- * and querying an on-demand provider is unreliable, so we use the framework's
- * own cross-process prefs as the single source of truth. After writing, the app
- * broadcasts {@link #ACTION_ALLOWLIST_CHANGED} so the system_server hook re-reads
- * its in-memory copy.
+ * Shared module configuration, stored in libxposed cross-process remote
+ * preferences so both the settings UI and system_server hooks see the same
+ * values.
  */
 public final class Prefs {
     public static final String MODULE_PKG = "io.github.howard20181.hyperos.fcmlive";
-    /** Remote prefs group shared by the app process and system_server. */
     public static final String GROUP_CONFIG = "config";
     public static final String KEY_ALLOWLIST = "allowlist";
-    /** Action the app broadcasts after writing, to refresh system_server. */
+    public static final String KEY_KEEP_NOTIFICATIONS = "keep_notifications";
+
+    /**
+     * Historical name kept for compatibility. The broadcast now means that any
+     * shared config value may have changed, not just the allowlist.
+     */
     public static final String ACTION_ALLOWLIST_CHANGED = MODULE_PKG + ".ALLOWLIST_CHANGED";
 
     private Prefs() {
@@ -36,9 +34,23 @@ public final class Prefs {
         return set != null ? new HashSet<>(set) : new HashSet<>();
     }
 
+    public static boolean readKeepNotifications(SharedPreferences remotePrefs) {
+        return remotePrefs.getBoolean(KEY_KEEP_NOTIFICATIONS, false);
+    }
+
     public static void writeAllowlist(Context context, SharedPreferences remotePrefs,
                                       Set<String> allowlist) {
         remotePrefs.edit().putStringSet(KEY_ALLOWLIST, new HashSet<>(allowlist)).commit();
+        notifyConfigChanged(context);
+    }
+
+    public static void writeKeepNotifications(Context context, SharedPreferences remotePrefs,
+                                              boolean enabled) {
+        remotePrefs.edit().putBoolean(KEY_KEEP_NOTIFICATIONS, enabled).commit();
+        notifyConfigChanged(context);
+    }
+
+    private static void notifyConfigChanged(Context context) {
         context.sendBroadcast(new Intent(ACTION_ALLOWLIST_CHANGED));
     }
 }
