@@ -19,8 +19,8 @@
             android:id="@+id/top_app_bar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:title="@string/appbar_title"
             app:menu="@menu/menu_main"
+            app:title="@string/appbar_title"
             app:titleCentered="false" />
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -79,9 +79,10 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:divider="@null"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="8dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:paddingBottom="16dp" />
 
     </LinearLayout>
