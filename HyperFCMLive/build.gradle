@@ -41,8 +41,10 @@ android {
             } else {
                 signingConfig signingConfigs.debug
             }
-            minifyEnabled true
-            proguardFiles 'proguard-rules.pro'
+            // This module relies heavily on reflection and runtime-discovered
+            // Xposed/GMS classes. Keep release behavior aligned with debug until
+            // we have a verified, narrowly-scoped R8 configuration.
+            minifyEnabled false
             vcsInfo.include false
         }
     }
